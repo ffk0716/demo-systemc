@@ -56,7 +56,7 @@ SC_MODULE (B)
 
 
 // sc_main in top level function like in C++ main
-int main(int argc, char* argv[]) 
+int sc_main(int argc, char* argv[]) 
 {
 	//sc_clock TestClk("TestClock", 2, SC_NS,0.5);
 	//B b("b");
