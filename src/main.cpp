@@ -1,84 +1,97 @@
-// All systemc modules should include systemc.h header file
-#include "systemc.h"
-// Hello_world is module name
+#include <systemc.h>
 
-class hello_world : sc_module
+#include <cstdint>
+
+template <class T, size_t N> SC_MODULE(delay_pipe)
 {
   public:
-    sc_in<unsigned> in;
-    sc_in<unsigned> in2;
-    sc_in<unsigned> in3;
-    hello_world(std::string a) : sc_module(a), in("in"), in2("in2")
+    sc_in_clk m_clk;
+    sc_export<sc_signal_inout_if<T>> m_in;
+    sc_export<sc_signal_in_if<T>> m_out;
+
+  public:
+    SC_CTOR(delay_pipe)
     {
-        // SC_THREAD(say_hello);
-        sensitive << in;
-        in3(in2);
-        // Nothing in constructor
+        m_in(m_pipe[0]);
+        m_out(m_pipe[N - 1]);
+        SC_METHOD(run);
+        sensitive << m_clk.pos();
     }
-    void say_hello()
+
+  private:
+    sc_signal<T> m_pipe[N];
+
+  private:
+    void run()
     {
-        // Print "Hello World" to the console.
-        while (1)
+        for (size_t i = 1; i < N; i++)
         {
-            cout << in.read() << endl;
-            cout << in2.read() << endl;
-            wait();
+            m_pipe[i].write(m_pipe[i - 1].read());
         }
     }
 };
 
-SC_MODULE(B)
+using atom = uint32_t;
+
+SC_MODULE(Reader)
 {
-    sc_out<unsigned> out;
-    sc_in<bool> clk;
-    SC_CTOR(B)
+  public:
+    sc_in_clk m_clk;
+    sc_in<atom> m_from_pipe;
+
+  public:
+    SC_CTOR(Reader)
     {
-        SC_THREAD(main);
-        sensitive << clk.pos();
-        // Nothing in constructor
+        SC_METHOD(extract)
+        sensitive << m_clk.pos();
+        dont_initialize();
     }
-    void main()
+
+  private:
+    void extract() { cout << sc_time_stamp().to_double() << ": " << m_from_pipe.read() << endl; }
+};
+
+SC_MODULE(Writer)
+{
+  public:
+    sc_in_clk m_clk;
+    sc_inout<atom> m_to_pipe;
+
+  public:
+    SC_CTOR(Writer)
     {
-        // Print "Hello World" to the console.
-        cout << "B." << endl;
-        out.write(9);
-        out.write(8);
-        wait();
-        out.write(8);
-        wait();
-        out.write(9);
-        wait();
-        sc_stop();
+        SC_METHOD(insert)
+        sensitive << m_clk.pos();
+        m_counter = 0;
+    }
+
+  private:
+    atom m_counter;
+
+  private:
+    void insert()
+    {
+        m_to_pipe.write(m_counter);
+        m_counter++;
     }
 };
 
-// sc_main in top level function like in C++ main
-int sc_main(int argc, char *argv[])
+int sc_main(int, char *[])
 {
-    // sc_clock TestClk("TestClock", 2, SC_NS,0.5);
-    // B b("b");
+    sc_clock clock("clk", {1, SC_NS});
+    delay_pipe<atom, 4> delay("pipe");
+    Reader reader("reader");
+    Writer writer("writer");
 
-    hello_world hello("HELLO");
-    sc_signal<unsigned> s;
-    sc_signal<unsigned> s2;
-    // b.clk(TestClk);
-    hello.in(s);
-    hello.in2(s);
-    // b.out(s);
-    bool i = 0;
-    s.write(i);
-    i = !i;
-    s.write(i);
-    i = !i;
-    s.write(i);
-    i = !i;
+    delay.m_clk(clock);
 
-    sc_start();
-    s.write(i);
-    i = !i;
-    sc_start();
-    s.write(i);
-    i = !i;
-    sc_start();
+    reader.m_clk(clock);
+    reader.m_from_pipe(delay.m_out);
+
+    writer.m_clk(clock);
+    writer.m_to_pipe(delay.m_in);
+
+    sc_start(10, SC_NS);
+
     return 0;
 }
